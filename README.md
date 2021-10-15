@@ -1,2 +1,2 @@
 # Downloader
-Simple file downloader in python using cURL
+File downloader in python with parallel download support
