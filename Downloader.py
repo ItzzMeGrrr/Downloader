@@ -37,12 +37,11 @@ if(argv.__getattribute__("verbose")):
 downloadedfile = 0
 bar = ChargingBar("Downloading")
 
-# TODO: Implement feature to let user provide/download multiple urls
 
-
-def fill_url():  # get url from argv
+def fill_url():
+    '''Returns url from argv'''
     if argv.__getattribute__("url"):
-        url=str(argv.__getattribute__("url")[0])
+        url = str(argv.__getattribute__("url")[0])
         url = urllib.parse.unquote(url)
         if argv.__getattribute__("url").__len__() > 1:
             print(
@@ -71,7 +70,8 @@ def fill_url():  # get url from argv
     return url
 
 
-def fill_connections():  # get connections from argv
+def fill_connections():
+    '''Returns connections from argv'''
     if argv.__getattribute__("connections"):
         connections = int(argv.__getattribute__("connections")[0])
         return connections
@@ -79,7 +79,8 @@ def fill_connections():  # get connections from argv
         return 1
 
 
-def fill_file():  # get filename from argv
+def fill_file():
+    '''Returns filename from argv'''
     try:
         if argv.__getattribute__("file"):
             file = path.abspath(argv.__getattribute__("file")[0])
@@ -127,6 +128,7 @@ def fill_file():  # get filename from argv
 
 
 def retrieve_filename(response, url):
+    '''Tries retrieve filename from url or Content-Disposition header othrewise generates random filename'''
     tempurl = urllib.parse.urlparse(url)
     tempfilename = path.basename(tempurl.path)
     if tempfilename:
@@ -166,6 +168,7 @@ def retrieve_filename(response, url):
 
 
 def fill_response(url):
+    '''Returns head response for the given url'''
     resp = requests.head(url, allow_redirects=True)
     contenttype = resp.headers.get("Content-type")
 
@@ -182,6 +185,7 @@ def fill_response(url):
 
 
 def still_download(filetype):
+    '''Prompt user if they want to download file'''
     print(
         f"{WARNING}Its seems its '{filetype}' file, you still want to download?{RESET}")
     if not input(f"{WARNING}Enter Y/y to download: ").lower().__contains__("y"):
@@ -192,6 +196,7 @@ def still_download(filetype):
 
 
 def calculate_chunk_sizes(connections, filelength):
+    '''Returns chunksize for given connections and filelength'''
     remainder = filelength % connections
     filelength -= remainder
     chunksize = int(filelength / connections)
@@ -199,6 +204,7 @@ def calculate_chunk_sizes(connections, filelength):
 
 
 def server_supports_range(response):
+    '''Returns True if server accepts range requests'''
     if not response.headers.get("Accept-Ranges"):
         return False
     else:
@@ -206,38 +212,30 @@ def server_supports_range(response):
 
 
 def write_to_file(filename, data):
+    '''Writes binary given data to given filename'''
     with open(filename, 'ab') as f:
         f.write(data)
 
 
-def report_progress(id, downloadedsize):
+def report_progress(downloadedsize):
+    '''Prints progress bar'''
     global downloadedfile
     downloadedfile += downloadedsize
-    print(VERBOSE)
+    print(f"{Fore.GREEN}", end="")
     bar.next(downloadedsize)
-    print(RESET,end="")
+    print(RESET, end="")
     if filelength <= downloadedfile:
         bar.finish()
 
 
 def download_multipart(url, startrange, finishrange, id, outputfile):
-    '''A downloading thread'''
+    '''Download file in the given startrange and finishrange from url and write it to outputfile'''
     filename = f"{outputfile}.part{id}"
     chunksizetemp = 1024 * 500
     size = finishrange - startrange
     downloadeddata = 0
     starttemp = 0
     fintemp = 0
-    if chunksizetemp > size:
-        header = {"Range": f"bytes={startrange}-{finishrange}"}
-        content = requests.get(url, headers=header).content
-        downloadeddata += content.__len__()
-        write_to_file(filename, content)
-        report_progress(id, content.__len__())
-        if verbose:
-            print(
-                f"{VERBOSE}Thread({id}) is done!!{Fore.RESET}")
-        exit()
     while downloadeddata < size:
         if starttemp == 0 and fintemp == 0:
             starttemp = startrange
@@ -254,7 +252,7 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
         downloadeddata += content.__len__()
 
         write_to_file(filename, content)
-        report_progress(id, content.__len__())
+        report_progress(content.__len__())
         if path.getsize(filename) >= size:
             # print(
             #     f"{Fore.CYAN}{id}: File size met. f({path.getsize(filename)}) s({size})")
@@ -264,24 +262,30 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
 
 
 def download_singlepart(url, filename):
+    '''Download content from given url and save it to filename'''
     filename = f"{filename}.part{id}"
     downloadeddata = 0
     content = requests.get(url).content
     downloadeddata += content.__len__()
     write_to_file(filename, content)
-    report_progress(id, content.__len__())
+    report_progress(content.__len__())
     if verbose:
         print(
             f"{VERBOSE}Thread({id}) is done!!{RESET}")
     exit()
 
 
-if __name__ == "__main__":
+def main():
+    '''Main function'''
     url = fill_url()
     response = fill_response(url)
     outputfilename = fill_file()
     connections = fill_connections()
-    supportsmultipart = True
+    if connections > 1:
+        supportsmultipart = True
+    else:
+        supportsmultipart = False
+
     try:
         filelength = int(response.headers.get("Content-Length"))
         if filelength < 1025 * 500:
@@ -295,12 +299,13 @@ if __name__ == "__main__":
         print(f"{WARNING}Sorry, server does not accept ranges{RESET}")
         chunksize = filelength
         supportsmultipart = False
-    else:
+    elif supportsmultipart:
         chunksize = calculate_chunk_sizes(connections, filelength)
 
     if verbose:
         print(f"{DEBUG}Connections: {connections},\nURL: {url},\nOutput File: {outputfilename}," +
               f"\nFileLength: {filelength} Bytes{RESET}")
+
     if not supportsmultipart:
         download_singlepart(url, outputfilename)
     else:
@@ -341,3 +346,9 @@ if __name__ == "__main__":
         except Exception as ex:
             print(ex)
             exit()
+
+
+if __name__ == "__main__":
+    main()
+# TODO: Fix verbose progress bar multiline bug
+# TODO: Implement feature to let user provide/download multiple urls
