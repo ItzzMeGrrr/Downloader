@@ -49,10 +49,10 @@ def fill_url():
         try:
             if verbose:
                 print(
-                    f"{VERBOSE}Checking connection to url...{RESET}")
+                    f"\r{VERBOSE}Checking connection to url...{RESET}")
             requests.head(url)
             if verbose:
-                print(f"{VERBOSE}Connection successful!{RESET}")
+                print(f"\r{VERBOSE}Connection successful!{RESET}")
         except requests.ConnectionError as ce:
             print(
                 f"{ERROR}Could not connect to {url}, please check the url or the internet.{RESET}")
@@ -89,7 +89,7 @@ def fill_file():
         else:
             if verbose:
                 print(
-                    f"{WARNING}File name not provided, so going with filename from url if possible.{RESET}")
+                    f"\r{WARNING}File name not provided, so going with filename from url if possible.{RESET}")
 
             ret = retrieve_filename(response, url)
             if type(ret) == str:  # try to determine the file extention
@@ -97,11 +97,11 @@ def fill_file():
                 if path.splitext(file)[1]:
                     if verbose:
                         print(
-                            f"{VERBOSE}Extention found: {path.splitext(file)[1]} {RESET}")
+                            f"\r{VERBOSE}Extention found: {path.splitext(file)[1]} {RESET}")
                 else:
                     contenttype = response.headers.get("Content-type")
                     if verbose:
-                        print(f"Content: {contenttype}")
+                        print(f"\rContent: {contenttype}")
                     if contenttype.__contains__("javascript"):
                         file = file + ".js"
                     elif contenttype.__contains__("css"):
@@ -111,14 +111,14 @@ def fill_file():
                     elif contenttype.__contains__("zip"):
                         file = file + ".zip"
                 if verbose:
-                    print(f"{VERBOSE}File name found: {file}{RESET}")
+                    print(f"\r{VERBOSE}File name found: {file}{RESET}")
             else:  # Could not retrieve file name from anywhere
                 randomname = ''.join(random.choices(
                     string.ascii_letters + string.digits, k=8))
                 file = randomname
                 if verbose:
                     print(
-                        f"{WARNING}Could not determine filename so going random.{RESET}")
+                        f"\r{WARNING}Could not determine filename so going random.{RESET}")
 
     except FileNotFoundError as fnf:
         print(
@@ -153,13 +153,13 @@ def retrieve_filename(response, url):
                     else:
                         if verbose:
                             print(
-                                f"{WARNING}Filename not found in Content-Disposition header.{RESET}")
+                                f"\r{WARNING}Filename not found in Content-Disposition header.{RESET}")
 
                 return False
             else:
                 if verbose:
                     print(
-                        f"{WARNING}Filename not found in Content-Disposition header.{RESET}")
+                        f"\r{WARNING}Filename not found in Content-Disposition header.{RESET}")
                 return False
         except IndexError as ie:
             print(
@@ -221,9 +221,9 @@ def report_progress(downloadedsize):
     '''Prints progress bar'''
     global downloadedfile
     downloadedfile += downloadedsize
-    print(f"{Fore.GREEN}", end="")
+    # print(f"{Fore.GREEN}", end="")
     bar.next(downloadedsize)
-    print(RESET, end="")
+    # print(RESET, end="")
     if filelength <= downloadedfile:
         bar.finish()
 
@@ -236,6 +236,15 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
     downloadeddata = 0
     starttemp = 0
     fintemp = 0
+    if size < chunksizetemp:
+        content = requests.get(url).content
+        downloadeddata += content.__len__()
+        write_to_file(filename, content)
+        report_progress(content.__len__())
+        if verbose:
+            print(
+                f"\r{VERBOSE}Thread({id}) is done!!{RESET}")
+        exit()
     while downloadeddata < size:
         if starttemp == 0 and fintemp == 0:
             starttemp = startrange
@@ -245,20 +254,16 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
             fintemp = starttemp + chunksizetemp
             if fintemp > finishrange:
                 fintemp = finishrange
-
         header = {"Range": f"bytes={starttemp}-{fintemp}"}
-
         content = requests.get(url, headers=header).content
         downloadeddata += content.__len__()
 
         write_to_file(filename, content)
         report_progress(content.__len__())
-        if path.getsize(filename) >= size:
-            # print(
-            #     f"{Fore.CYAN}{id}: File size met. f({path.getsize(filename)}) s({size})")
+        if path.getsize(filename) >= size:            
             break
     if verbose:
-        print(f"{VERBOSE}{id} is done!!{Fore.RESET}")
+        print(f"\r{VERBOSE}Thread({id}) is done!!{Fore.RESET}")
 
 
 def download_singlepart(url, filename):
@@ -271,16 +276,22 @@ def download_singlepart(url, filename):
     report_progress(content.__len__())
     if verbose:
         print(
-            f"{VERBOSE}Thread({id}) is done!!{RESET}")
+            f"\r{VERBOSE}Thread({id}) is done!!{RESET}")
     exit()
 
 
 def main():
     '''Main function'''
+    global url
     url = fill_url()
+    global response
     response = fill_response(url)
+    global outputfilename
     outputfilename = fill_file()
+    global connections
     connections = fill_connections()
+    global filelength
+    global bar    
     if connections > 1:
         supportsmultipart = True
     else:
@@ -303,10 +314,11 @@ def main():
         chunksize = calculate_chunk_sizes(connections, filelength)
 
     if verbose:
-        print(f"{DEBUG}Connections: {connections},\nURL: {url},\nOutput File: {outputfilename}," +
+        print(f"\r{DEBUG}Connections: {connections},\nURL: {url},\nOutput File: {outputfilename}," +
               f"\nFileLength: {filelength} Bytes{RESET}")
 
     if not supportsmultipart:
+        print(f"{VERBOSE}Single connection mode!{RESET}")
         download_singlepart(url, outputfilename)
     else:
         threaddpool = []
@@ -328,12 +340,13 @@ def main():
             for thread in threaddpool:
                 thread.start()
             if verbose:
-                print(f"{Fore.LIGHTBLUE_EX}Main: All threads started{Fore.RESET}")
+                print(
+                    f"\r{Fore.LIGHTBLUE_EX}Main: All threads started{Fore.RESET}")
             for thread in threaddpool:
                 thread.join()
             bar.finish()
             if verbose:
-                print("Main thread free!")
+                print(f"\r{VERBOSE}Main thread free!{RESET}")
             with open(outputfilename, 'wb') as finalfile:
                 for con in range(connections):
                     file = f"{outputfilename}.part{con}"
