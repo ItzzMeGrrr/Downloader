@@ -95,13 +95,9 @@ def fill_file():
             if type(ret) == str:  # try to determine the file extention
                 file = ret
                 if path.splitext(file)[1]:
-                    if verbose:
-                        print(
-                            f"\r{VERBOSE}Extention found: {path.splitext(file)[1]} {RESET}")
+                    pass
                 else:
                     contenttype = response.headers.get("Content-type")
-                    if verbose:
-                        print(f"\rContent: {contenttype}")
                     if contenttype.__contains__("javascript"):
                         file = file + ".js"
                     elif contenttype.__contains__("css"):
@@ -111,14 +107,14 @@ def fill_file():
                     elif contenttype.__contains__("zip"):
                         file = file + ".zip"
                 if verbose:
-                    print(f"\r{VERBOSE}File name found: {file}{RESET}")
+                    print(f"\r{VERBOSE}File name found: {file}{RESET}\n")
             else:  # Could not retrieve file name from anywhere
                 randomname = ''.join(random.choices(
                     string.ascii_letters + string.digits, k=8))
                 file = randomname
                 if verbose:
                     print(
-                        f"\r{WARNING}Could not determine filename so going random.{RESET}")
+                        f"\r{WARNING}Could not determine filename so going random.{RESET}\n")
 
     except FileNotFoundError as fnf:
         print(
@@ -153,13 +149,13 @@ def retrieve_filename(response, url):
                     else:
                         if verbose:
                             print(
-                                f"\r{WARNING}Filename not found in Content-Disposition header.{RESET}")
+                                f"\r{WARNING}Filename not found in Content-Disposition header.{RESET}\n")
 
                 return False
             else:
                 if verbose:
                     print(
-                        f"\r{WARNING}Filename not found in Content-Disposition header.{RESET}")
+                        f"\r{WARNING}Filename not found in Content-Disposition header.{RESET}\n")
                 return False
         except IndexError as ie:
             print(
@@ -243,7 +239,7 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
         report_progress(content.__len__())
         if verbose:
             print(
-                f"\r{VERBOSE}Thread({id}) is done!!{RESET}")
+                f"\n{VERBOSE}Thread({id}) is done!!{RESET}\n")
         exit()
     while downloadeddata < size:
         if starttemp == 0 and fintemp == 0:
@@ -263,7 +259,7 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
         if path.getsize(filename) >= size:            
             break
     if verbose:
-        print(f"\r{VERBOSE}Thread({id}) is done!!{Fore.RESET}")
+        print(f"\n{VERBOSE}Thread({id}) is done!!{Fore.RESET}\n")
 
 
 def download_singlepart(url, filename):
@@ -276,7 +272,7 @@ def download_singlepart(url, filename):
     report_progress(content.__len__())
     if verbose:
         print(
-            f"\r{VERBOSE}Thread({id}) is done!!{RESET}")
+            f"\r{VERBOSE}Thread({id}) is done!!{RESET}\n")
     exit()
 
 
@@ -315,7 +311,7 @@ def main():
 
     if verbose:
         print(f"\r{DEBUG}Connections: {connections},\nURL: {url},\nOutput File: {outputfilename}," +
-              f"\nFileLength: {filelength} Bytes{RESET}")
+              f"\nFileLength: {filelength} Bytes{RESET}\n")
 
     if not supportsmultipart:
         print(f"{VERBOSE}Single connection mode!{RESET}")
@@ -341,12 +337,12 @@ def main():
                 thread.start()
             if verbose:
                 print(
-                    f"\r{Fore.LIGHTBLUE_EX}Main: All threads started{Fore.RESET}")
+                    f"\r{VERBOSE}Main: All threads started{RESET}\n")
             for thread in threaddpool:
                 thread.join()
             bar.finish()
             if verbose:
-                print(f"\r{VERBOSE}Main thread free!{RESET}")
+                print(f"\r{VERBOSE}Main thread free!{RESET}\n")
             with open(outputfilename, 'wb') as finalfile:
                 for con in range(connections):
                     file = f"{outputfilename}.part{con}"
