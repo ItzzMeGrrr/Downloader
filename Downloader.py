@@ -1,4 +1,5 @@
 import os
+import sys
 import requests
 import argparse
 import os.path as path
@@ -8,12 +9,14 @@ import string
 import random
 import threading
 from progress.bar import ChargingBar
+from socket import gaierror
+from urllib3.exceptions import NewConnectionError
 
-WARNING = f"{Fore.YELLOW}[WARNING]"
-RESET = f"{Fore.RESET}"
-ERROR = f"{Fore.RED}[ERROR]"
-DEBUG = f"{Fore.CYAN}[DEBUG]"
-VERBOSE = f"{Fore.LIGHTGREEN_EX}[*]"
+COLOR_WARNING = f"{Fore.YELLOW}[WARNING]"
+COLOR_RESET = f"{Fore.RESET}"
+COLOR_ERROR = f"{Fore.RED}[ERROR]"
+COLOR_DEBUG = f"{Fore.CYAN}[DEBUG]"
+COLOR_VERBOSE = f"{Fore.LIGHTGREEN_EX}[*]"
 
 parser = argparse.ArgumentParser(description='File Downloader')
 parser.add_argument('url', metavar='url', type=str,
@@ -45,27 +48,27 @@ def fill_url():
         url = urllib.parse.unquote(url)
         if argv.__getattribute__("url").__len__() > 1:
             print(
-                f"{WARNING}Current we support only one file download, so all urls except '{url}' will be ignored!!{RESET}")
+                f"{COLOR_WARNING}Current we support only one file download, so all urls except '{url}' will be ignored!!{COLOR_RESET}")
         try:
             if verbose:
                 print(
-                    f"\r{VERBOSE}Checking connection to url...{RESET}")
+                    f"\r{COLOR_VERBOSE}Checking connection to url...{COLOR_RESET}")
             requests.head(url)
             if verbose:
-                print(f"\r{VERBOSE}Connection successful!{RESET}")
+                print(f"\r{COLOR_VERBOSE}Connection successful!{COLOR_RESET}")
         except requests.ConnectionError as ce:
             print(
-                f"{ERROR}Could not connect to {url}, please check the url or the internet.{RESET}")
+                f"{COLOR_ERROR}Could not connect to {url}, please check the url or the internet.{COLOR_RESET}")
             exit()
         except requests.exceptions.MissingSchema as missingschema:
-            print(f"{ERROR}" +
-                  str(missingschema)+f"{RESET}")
+            print(f"{COLOR_ERROR}" +
+                  str(missingschema)+f"{COLOR_RESET}")
             exit()
         except Exception as e:
             print(e)
             exit()
     else:
-        print(f"{ERROR}URL not found!!{RESET}")
+        print(f"{COLOR_ERROR}URL not found!!{COLOR_RESET}")
         exit()
     return url
 
@@ -89,7 +92,7 @@ def fill_file():
         else:
             if verbose:
                 print(
-                    f"\r{WARNING}File name not provided, so going with filename from url if possible.{RESET}")
+                    f"\r{COLOR_WARNING}File name not provided, so going with filename from url if possible.{COLOR_RESET}")
 
             ret = retrieve_filename(response, url)
             if type(ret) == str:  # try to determine the file extention
@@ -107,18 +110,19 @@ def fill_file():
                     elif contenttype.__contains__("zip"):
                         file = file + ".zip"
                 if verbose:
-                    print(f"\r{VERBOSE}File name found: {file}{RESET}\n")
+                    print(
+                        f"\r{COLOR_VERBOSE}File name found: {file}{COLOR_RESET}\n")
             else:  # Could not retrieve file name from anywhere
                 randomname = ''.join(random.choices(
                     string.ascii_letters + string.digits, k=8))
                 file = randomname
                 if verbose:
                     print(
-                        f"\r{WARNING}Could not determine filename so going random.{RESET}\n")
+                        f"\r{COLOR_WARNING}Could not determine filename so going random.{COLOR_RESET}\n")
 
     except FileNotFoundError as fnf:
         print(
-            f"{ERROR}Invalid path: {argv.__getattribute__('file')[0]}{RESET}")
+            f"{COLOR_ERROR}Invalid path: {argv.__getattribute__('file')[0]}{COLOR_RESET}")
         exit(1)
     return file
 
@@ -149,17 +153,17 @@ def retrieve_filename(response, url):
                     else:
                         if verbose:
                             print(
-                                f"\r{WARNING}Filename not found in Content-Disposition header.{RESET}\n")
+                                f"\r{COLOR_WARNING}Filename not found in Content-Disposition header.{COLOR_RESET}\n")
 
                 return False
             else:
                 if verbose:
                     print(
-                        f"\r{WARNING}Filename not found in Content-Disposition header.{RESET}\n")
+                        f"\r{COLOR_WARNING}Filename not found in Content-Disposition header.{COLOR_RESET}\n")
                 return False
         except IndexError as ie:
             print(
-                f"{WARNING}Filename not found in Content-Disposition header.{RESET}")
+                f"{COLOR_WARNING}Filename not found in Content-Disposition header.{COLOR_RESET}")
             return False
 
 
@@ -183,12 +187,13 @@ def fill_response(url):
 def still_download(filetype):
     '''Prompt user if they want to download file'''
     print(
-        f"{WARNING}Its seems its '{filetype}' file, you still want to download?{RESET}")
-    if not input(f"{WARNING}Enter Y/y to download: ").lower().__contains__("y"):
-        print(f"{VERBOSE}Okay Bye!!{RESET}")
+        f"{COLOR_WARNING}Its seems its '{filetype}' file, you still want to download?{COLOR_RESET}")
+    confirmation = {"yes", "ye", "y"}
+    if not input(f"{COLOR_WARNING}Enter Y/y to download: ").lower() in confirmation:
+        print(f"{COLOR_VERBOSE}Okay Bye!!{COLOR_RESET}")
         exit()
     else:
-        print(RESET, end="")
+        print(COLOR_RESET, end="")
 
 
 def calculate_chunk_sizes(connections, filelength):
@@ -237,9 +242,6 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
         downloadeddata += content.__len__()
         write_to_file(filename, content)
         report_progress(content.__len__())
-        if verbose:
-            print(
-                f"\n{VERBOSE}Thread({id}) is done!!{RESET}\n")
         exit()
     while downloadeddata < size:
         if starttemp == 0 and fintemp == 0:
@@ -250,29 +252,29 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
             fintemp = starttemp + chunksizetemp
             if fintemp > finishrange:
                 fintemp = finishrange
-        header = {"Range": f"bytes={starttemp}-{fintemp}"}
-        content = requests.get(url, headers=header).content
-        downloadeddata += content.__len__()
+        try:
+            header = {"Range": f"bytes={starttemp}-{fintemp}"}
+            content = requests.get(url, headers=header).content
+            downloadeddata += content.__len__()
+        except gaierror as gaierr:
+            print(f"{id}: {gaierr}")
+        except NewConnectionError as nce:
+            print(f"{id}: {nce}")
+            exit()
 
         write_to_file(filename, content)
         report_progress(content.__len__())
-        if path.getsize(filename) >= size:            
+        if path.getsize(filename) >= size:
             break
-    if verbose:
-        print(f"\n{VERBOSE}Thread({id}) is done!!{Fore.RESET}\n")
 
 
 def download_singlepart(url, filename):
-    '''Download content from given url and save it to filename'''
-    filename = f"{filename}.part{id}"
+    '''Download content from given url and save it to filename'''    
     downloadeddata = 0
     content = requests.get(url).content
     downloadeddata += content.__len__()
     write_to_file(filename, content)
     report_progress(content.__len__())
-    if verbose:
-        print(
-            f"\r{VERBOSE}Thread({id}) is done!!{RESET}\n")
     exit()
 
 
@@ -287,34 +289,34 @@ def main():
     global connections
     connections = fill_connections()
     global filelength
-    global bar    
+    global bar
     if connections > 1:
-        supportsmultipart = True
+        supportsmulticonnections = True
     else:
-        supportsmultipart = False
+        supportsmulticonnections = False
 
     try:
         filelength = int(response.headers.get("Content-Length"))
         if filelength < 1025 * 500:
-            supportsmultipart = False
+            supportsmulticonnections = False
     except TypeError as te:
         print(
-            f"{WARNING}Server did not tell the file size, so have to use single connection.{RESET}")
-        supportsmultipart = False
+            f"{COLOR_WARNING}Server did not tell the file size, so have to use single connection.{COLOR_RESET}")
+        supportsmulticonnections = False
 
     if not server_supports_range(response):
-        print(f"{WARNING}Sorry, server does not accept ranges{RESET}")
+        print(f"{COLOR_WARNING}Sorry, server does not accept ranges{COLOR_RESET}")
         chunksize = filelength
-        supportsmultipart = False
-    elif supportsmultipart:
+        supportsmulticonnections = False
+    elif supportsmulticonnections:
         chunksize = calculate_chunk_sizes(connections, filelength)
 
     if verbose:
-        print(f"\r{DEBUG}Connections: {connections},\nURL: {url},\nOutput File: {outputfilename}," +
-              f"\nFileLength: {filelength} Bytes{RESET}\n")
+        print(f"\r{COLOR_DEBUG}Connections: {connections},\nURL: {url},\nOutput File: {outputfilename}," +
+              f"\nFileLength: {filelength} Bytes\nSupports Multiple Connection Download: {supportsmulticonnections}\n{COLOR_RESET}")
 
-    if not supportsmultipart:
-        print(f"{VERBOSE}Single connection mode!{RESET}")
+    if not supportsmulticonnections:
+        print(f"{COLOR_VERBOSE}Single connection mode!{COLOR_RESET}")
         download_singlepart(url, outputfilename)
     else:
         threaddpool = []
@@ -331,18 +333,19 @@ def main():
             threaddpool.append(threading.Thread(target=download_multipart, args=(
                 url, start, finish, conn, outputfilename)))
 
-        print(f"{VERBOSE}Starting...{RESET}")
+        print(f"{COLOR_VERBOSE}Starting...{COLOR_RESET}")
         try:
             for thread in threaddpool:
                 thread.start()
             if verbose:
                 print(
-                    f"\r{VERBOSE}Main: All threads started{RESET}\n")
+                    f"\r{COLOR_VERBOSE}Main: All threads started{COLOR_RESET}\n")
+
             for thread in threaddpool:
                 thread.join()
             bar.finish()
             if verbose:
-                print(f"\r{VERBOSE}Main thread free!{RESET}\n")
+                print(f"\r{COLOR_VERBOSE}Main thread free!{COLOR_RESET}\n")
             with open(outputfilename, 'wb') as finalfile:
                 for con in range(connections):
                     file = f"{outputfilename}.part{con}"
@@ -351,7 +354,7 @@ def main():
                         finalfile.write(line)
                     f.close()
                     os.remove(file)
-            print(f"{VERBOSE} Download complete!!{RESET}")
+            print(f"{COLOR_VERBOSE} Download complete!!{COLOR_RESET}")
         except Exception as ex:
             print(ex)
             exit()
@@ -359,5 +362,8 @@ def main():
 
 if __name__ == "__main__":
     main()
-# TODO: Fix verbose progress bar multiline bug
+
 # TODO: Implement feature to let user provide/download multiple urls
+# TODO: Implement feature to let user stop program in the middle of downloading
+# TODO: Implement mechanism to handle connection error in the middle of downloading
+# TODO: Implement feature to let user choose destination directory for the downloaded file
