@@ -11,6 +11,8 @@ import threading
 from progress.bar import ChargingBar
 from socket import gaierror
 from urllib3.exceptions import NewConnectionError
+import keyboard
+
 
 COLOR_WARNING = f"{Fore.YELLOW}[WARNING]"
 COLOR_RESET = f"{Fore.RESET}"
@@ -221,7 +223,7 @@ def write_to_file(filename, data):
 def report_progress(downloadedsize):
     '''Prints progress bar'''
     global downloadedfile
-    downloadedfile += downloadedsize
+    downloadedfile += downloadedsize    
     # print(f"{Fore.GREEN}", end="")
     bar.next(downloadedsize)
     # print(RESET, end="")
@@ -243,7 +245,7 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
         write_to_file(filename, content)
         report_progress(content.__len__())
         exit()
-    while downloadeddata < size:
+    while downloadeddata < size or not stop:
         if starttemp == 0 and fintemp == 0:
             starttemp = startrange
             fintemp = starttemp + chunksizetemp
@@ -263,6 +265,8 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
             exit()
 
         write_to_file(filename, content)
+        if stop:
+            exit(1)
         report_progress(content.__len__())
         if path.getsize(filename) >= size:
             break
@@ -271,11 +275,37 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
 def download_singlepart(url, filename):
     '''Download content from given url and save it to filename'''    
     downloadeddata = 0
-    content = requests.get(url).content
-    downloadeddata += content.__len__()
-    write_to_file(filename, content)
-    report_progress(content.__len__())
-    exit()
+    content_stream = requests.get(url, stream=True)
+    if path.exists(filename):
+        if not input(f"{COLOR_WARNING}File '{filename}' already exists! Do you want to overwrite it?(Y/y): ").lower() in {"yes","ye","y"}:
+            print(f"{COLOR_VERBOSE}Ok Bye!!{COLOR_RESET}")
+            exit()
+        else:
+            os.remove(filename)
+            print(f"{COLOR_RESET}")
+    partfile = f"{filename}.part"
+    if not path.exists(partfile):
+        with open(partfile,"x"):# create file if not exists
+            pass
+    else:
+        with open(partfile,"w"):# delete file content if file already exists
+            pass
+    
+
+    with open(partfile, "ab") as file:
+        try:
+            for chunk in content_stream.iter_content(1024*500):
+                    file.write(chunk)
+                    downloadeddata += chunk.__len__()
+                    print(f"\r{COLOR_VERBOSE}Downloaded: {downloadeddata/(1024*1024)} MB      {COLOR_RESET}", end="")
+        except KeyboardInterrupt:
+                print(f"\n{COLOR_ERROR}Download Cancelled! Downloaded {downloadeddata/(1024*1024)} MB{COLOR_RESET}")                
+                os.remove(partfile)
+                exit()
+    if path.exists(filename):
+        os.remove(filename)
+    os.rename(partfile, filename)
+    print(f"\n{COLOR_VERBOSE}Download complete!!{COLOR_RESET}")
 
 
 def main():
@@ -290,6 +320,8 @@ def main():
     connections = fill_connections()
     global filelength
     global bar
+    global stop
+    stop = False
     if connections > 1:
         supportsmulticonnections = True
     else:
@@ -314,7 +346,7 @@ def main():
     if verbose:
         print(f"\r{COLOR_DEBUG}Connections: {connections},\nURL: {url},\nOutput File: {outputfilename}," +
               f"\nFileLength: {filelength} Bytes\nSupports Multiple Connection Download: {supportsmulticonnections}\n{COLOR_RESET}")
-
+    
     if not supportsmulticonnections:
         print(f"{COLOR_VERBOSE}Single connection mode!{COLOR_RESET}")
         download_singlepart(url, outputfilename)
@@ -340,9 +372,17 @@ def main():
             if verbose:
                 print(
                     f"\r{COLOR_VERBOSE}Main: All threads started{COLOR_RESET}\n")
-
-            for thread in threaddpool:
-                thread.join()
+            
+            dead_threads = connections
+            try:
+                while(dead_threads > 0 or not stop):                
+                    for thread in threaddpool:
+                        if not thread.is_alive():
+                            dead_threads += 1
+                    for thread in threaddpool:
+                        thread.join(1)
+            except KeyboardInterrupt as ki:
+                stop = True
             bar.finish()
             if verbose:
                 print(f"\r{COLOR_VERBOSE}Main thread free!{COLOR_RESET}\n")
@@ -354,7 +394,17 @@ def main():
                         finalfile.write(line)
                     f.close()
                     os.remove(file)
-            print(f"{COLOR_VERBOSE} Download complete!!{COLOR_RESET}")
+            if not stop:
+                print(f"{COLOR_VERBOSE} Download complete!!{COLOR_RESET}")
+            else:
+                print(f"{COLOR_ERROR} Download Cancelled! Stopping threads...{COLOR_RESET}")
+                for thread in threaddpool:
+                    thread.join()
+                for conn in connections:
+                    partfile = f"{outputfilename}.part{conn}"
+                    if path.exists(partfile):
+                        os.remove(file)
+
         except Exception as ex:
             print(ex)
             exit()
@@ -367,3 +417,4 @@ if __name__ == "__main__":
 # TODO: Implement feature to let user stop program in the middle of downloading
 # TODO: Implement mechanism to handle connection error in the middle of downloading
 # TODO: Implement feature to let user choose destination directory for the downloaded file
+# TODO: Implement a thead handler class
