@@ -10,7 +10,7 @@ import random
 import threading
 from progress.bar import ChargingBar
 from socket import gaierror
-from urllib3.exceptions import NewConnectionError
+from urllib3.exceptions import NewConnectionError, ReadTimeoutError
 import keyboard
 
 
@@ -41,7 +41,7 @@ if(argv.__getattribute__("verbose")):
     verbose = True
 downloadedfile = 0
 bar = ChargingBar("Downloading")
-
+error_occured = False
 
 def fill_url():
     '''Returns url from argv'''
@@ -50,7 +50,7 @@ def fill_url():
         url = urllib.parse.unquote(url)
         if argv.__getattribute__("url").__len__() > 1:
             print(
-                f"{COLOR_WARNING}Current we support only one file download, so all urls except '{url}' will be ignored!!{COLOR_RESET}")
+                f"{COLOR_WARNING}Current we support only one file download, so all urls except '{url}' will be ignored!{COLOR_RESET}")
         try:
             if verbose:
                 print(
@@ -60,7 +60,7 @@ def fill_url():
                 print(f"\r{COLOR_VERBOSE}Connection successful!{COLOR_RESET}")
         except requests.ConnectionError as ce:
             print(
-                f"{COLOR_ERROR}Could not connect to {url}, please check the url or the internet.{COLOR_RESET}")
+                f"{COLOR_ERROR}Could not connect to {url}, please check the url or your internet connection.{COLOR_RESET}")
             exit()
         except requests.exceptions.MissingSchema as missingschema:
             print(f"{COLOR_ERROR}" +
@@ -70,7 +70,7 @@ def fill_url():
             print(e)
             exit()
     else:
-        print(f"{COLOR_ERROR}URL not found!!{COLOR_RESET}")
+        print(f"{COLOR_ERROR}URL not found!{COLOR_RESET}")
         exit()
     return url
 
@@ -192,7 +192,7 @@ def still_download(filetype):
         f"{COLOR_WARNING}Its seems its '{filetype}' file, you still want to download?{COLOR_RESET}")
     confirmation = {"yes", "ye", "y"}
     if not input(f"{COLOR_WARNING}Enter Y/y to download: ").lower() in confirmation:
-        print(f"{COLOR_VERBOSE}Okay Bye!!{COLOR_RESET}")
+        print(f"{COLOR_VERBOSE}Okay Bye!{COLOR_RESET}")
         exit()
     else:
         print(COLOR_RESET, end="")
@@ -223,7 +223,7 @@ def write_to_file(filename, data):
 def report_progress(downloadedsize):
     '''Prints progress bar'''
     global downloadedfile
-    downloadedfile += downloadedsize    
+    downloadedfile += downloadedsize
     # print(f"{Fore.GREEN}", end="")
     bar.next(downloadedsize)
     # print(RESET, end="")
@@ -239,8 +239,10 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
     downloadeddata = 0
     starttemp = 0
     fintemp = 0
+    global stop
+    global error_occured
     if size < chunksizetemp:
-        content = requests.get(url).content
+        content = requests.get(url, timeout=5).content
         downloadeddata += content.__len__()
         write_to_file(filename, content)
         report_progress(content.__len__())
@@ -256,72 +258,160 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
                 fintemp = finishrange
         try:
             header = {"Range": f"bytes={starttemp}-{fintemp}"}
-            content = requests.get(url, headers=header).content
+            content = requests.get(url, headers=header, timeout=5).content
             downloadeddata += content.__len__()
-        except gaierror as gaierr:
-            print(f"{id}: {gaierr}")
-        except NewConnectionError as nce:
-            print(f"{id}: {nce}")
+        except requests.exceptions.ConnectionError as nce:
+            if nce.__str__().__contains__("Failed to establish a new connection"):
+                print(f"{COLOR_ERROR}Thread {id}: Failed to establish a new connection!{COLOR_RESET}")
+            elif nce.__str__().__contains__("Read timed out"):
+                print(f"{COLOR_ERROR}Thread {id}: Connection timed out! Please check your internet connection!{COLOR_RESET}")                
+            else:
+                print(f"{COLOR_ERROR}Thread {id}: Connection Error... {nce}{COLOR_RESET}")
+            error_occured = True
+            stop = True
+            exit()
+        except Exception as exc:
+            print(f"Thread {id}: {exc}")
+            error_occured = True
+            stop = True
             exit()
 
         write_to_file(filename, content)
         if stop:
-            exit(1)
+            break
         report_progress(content.__len__())
         if path.getsize(filename) >= size:
             break
 
 
 def download_singlepart(url, filename):
-    '''Download content from given url and save it to filename'''    
+    '''Download content from given url and save it to filename'''
     downloadeddata = 0
-    content_stream = requests.get(url, stream=True)
+    content_stream = requests.get(url, stream=True, timeout=5)
     if path.exists(filename):
-        if not input(f"{COLOR_WARNING}File '{filename}' already exists! Do you want to overwrite it?(Y/y): ").lower() in {"yes","ye","y"}:
-            print(f"{COLOR_VERBOSE}Ok Bye!!{COLOR_RESET}")
+        if not input(f"{COLOR_WARNING}File '{filename}' already exists! Do you want to overwrite it?(Y/y): ").lower() in {"yes", "ye", "y"}:
+            print(f"{COLOR_VERBOSE}Ok Bye!{COLOR_RESET}")
             exit()
         else:
             os.remove(filename)
             print(f"{COLOR_RESET}")
+    
     partfile = f"{filename}.part"
     if not path.exists(partfile):
-        with open(partfile,"x"):# create file if not exists
+        with open(partfile, "x"):  # create file if not exists
             pass
     else:
-        with open(partfile,"w"):# delete file content if file already exists
+        with open(partfile, "w"):  # delete file content if file already exists
             pass
     
-
     with open(partfile, "ab") as file:
         try:
             for chunk in content_stream.iter_content(1024*500):
-                    file.write(chunk)
-                    downloadeddata += chunk.__len__()
-                    print(f"\r{COLOR_VERBOSE}Downloaded: {downloadeddata/(1024*1024)} MB      {COLOR_RESET}", end="")
+                file.write(chunk)
+                downloadeddata += chunk.__len__()
+                print(
+                    f"\r{COLOR_VERBOSE}Downloaded: {downloadeddata/(1024*1024)} MB      {COLOR_RESET}", end="")
         except KeyboardInterrupt:
-                print(f"\n{COLOR_ERROR}Download Cancelled! Downloaded {downloadeddata/(1024*1024)} MB{COLOR_RESET}")                
-                os.remove(partfile)
-                exit()
+            print(
+                f"\n{COLOR_ERROR}Download Cancelled! Downloaded {downloadeddata/(1024*1024)} MB{COLOR_RESET}")
+            os.remove(partfile)
+            exit()
+    
     if path.exists(filename):
         os.remove(filename)
     os.rename(partfile, filename)
-    print(f"\n{COLOR_VERBOSE}Download complete!!{COLOR_RESET}")
+    print(f"\n{COLOR_VERBOSE}Download complete!{COLOR_RESET}")
+
+
+def download(chunksize):
+    threaddpool = []
+    global bar
+    global stop
+    global verbose
+    global connections
+    bar = ChargingBar("Downloading ", max=filelength)
+    for conn in range(connections):
+        if not conn == 0:
+            start = (conn * chunksize) + 1
+            finish = (start + chunksize) - 1
+        else:
+            start = 0
+            finish = chunksize
+        if conn + 1 == connections:
+            finish = filelength
+        threaddpool.append(threading.Thread(target=download_multipart, args=(
+            url, start, finish, conn, outputfilename)))
+
+    print(f"{COLOR_VERBOSE}Starting...{COLOR_RESET}")
+    try:
+        for thread in threaddpool:
+            thread.start()
+        if verbose:
+            print(
+                f"\r{COLOR_VERBOSE}Main: All threads started{COLOR_RESET}\n")
+
+        alive_threads_count = connections
+        dead_threads = []
+        try:
+            while alive_threads_count > 0:
+                if stop:
+                    break
+                for thread in threaddpool:
+                    if not thread.is_alive() and thread.getName() not in dead_threads:
+                        alive_threads_count -= 1
+                        dead_threads.append(thread.getName())
+        except KeyboardInterrupt:
+            stop = True
+        if stop and not error_occured:
+            print(f"\n{COLOR_VERBOSE}Waiting for threads to stop...{COLOR_RESET}")
+        for thread in threaddpool:
+            thread.join()
+        bar.finish()
+        if not stop:
+            with open(outputfilename, 'wb') as finalfile:
+                for con in range(connections):
+                    file = f"{outputfilename}.part{con}"
+                    if path.exists(file):
+                        f = open(file, 'rb')
+                        for line in f.readlines():
+                            finalfile.write(line)
+                        f.close()
+                        os.remove(file)
+        else:
+            if verbose:
+                print(f"{COLOR_VERBOSE}Cleaning residual files...{COLOR_RESET}")
+            for con in range(connections):
+                    file = f"{outputfilename}.part{con}"
+                    if path.exists(file):
+                        os.remove(file)
+        if not stop:
+            print(f"{COLOR_VERBOSE} Download complete!{COLOR_RESET}")
+        elif error_occured:
+            print(f"{COLOR_ERROR} Download could not be completed!{COLOR_RESET}")
+        else:
+            print(f"{COLOR_ERROR} Download Cancelled!{COLOR_RESET}")
+
+    except Exception as ex:
+        print(ex)
+        exit()
 
 
 def main():
     '''Main function'''
     global url
-    url = fill_url()
-    global response
-    response = fill_response(url)
-    global outputfilename
-    outputfilename = fill_file()
-    global connections
-    connections = fill_connections()
     global filelength
     global bar
     global stop
+    global response
+    global outputfilename
+    global connections
+
+    url = fill_url()
+    response = fill_response(url)
+    outputfilename = fill_file()
+    connections = fill_connections()
     stop = False
+
     if connections > 1:
         supportsmulticonnections = True
     else:
@@ -331,9 +421,10 @@ def main():
         filelength = int(response.headers.get("Content-Length"))
         if filelength < 1025 * 500:
             supportsmulticonnections = False
-    except TypeError as te:
+    except TypeError:
         print(
             f"{COLOR_WARNING}Server did not tell the file size, so have to use single connection.{COLOR_RESET}")
+        filelength = False
         supportsmulticonnections = False
 
     if not server_supports_range(response):
@@ -346,75 +437,25 @@ def main():
     if verbose:
         print(f"\r{COLOR_DEBUG}Connections: {connections},\nURL: {url},\nOutput File: {outputfilename}," +
               f"\nFileLength: {filelength} Bytes\nSupports Multiple Connection Download: {supportsmulticonnections}\n{COLOR_RESET}")
-    
+
     if not supportsmulticonnections:
         print(f"{COLOR_VERBOSE}Single connection mode!{COLOR_RESET}")
         download_singlepart(url, outputfilename)
     else:
-        threaddpool = []
-        bar = ChargingBar("Downloading", max=filelength)
-        for conn in range(connections):
-            if not conn == 0:
-                start = (conn * chunksize) + 1
-                finish = (start + chunksize) - 1
-            else:
-                start = 0
-                finish = chunksize
-            if conn + 1 == connections:
-                finish = filelength
-            threaddpool.append(threading.Thread(target=download_multipart, args=(
-                url, start, finish, conn, outputfilename)))
-
-        print(f"{COLOR_VERBOSE}Starting...{COLOR_RESET}")
-        try:
-            for thread in threaddpool:
-                thread.start()
-            if verbose:
-                print(
-                    f"\r{COLOR_VERBOSE}Main: All threads started{COLOR_RESET}\n")
-            
-            dead_threads = connections
-            try:
-                while(dead_threads > 0 or not stop):                
-                    for thread in threaddpool:
-                        if not thread.is_alive():
-                            dead_threads += 1
-                    for thread in threaddpool:
-                        thread.join(1)
-            except KeyboardInterrupt as ki:
-                stop = True
-            bar.finish()
-            if verbose:
-                print(f"\r{COLOR_VERBOSE}Main thread free!{COLOR_RESET}\n")
-            with open(outputfilename, 'wb') as finalfile:
-                for con in range(connections):
-                    file = f"{outputfilename}.part{con}"
-                    f = open(file, 'rb')
-                    for line in f.readlines():
-                        finalfile.write(line)
-                    f.close()
-                    os.remove(file)
-            if not stop:
-                print(f"{COLOR_VERBOSE} Download complete!!{COLOR_RESET}")
-            else:
-                print(f"{COLOR_ERROR} Download Cancelled! Stopping threads...{COLOR_RESET}")
-                for thread in threaddpool:
-                    thread.join()
-                for conn in connections:
-                    partfile = f"{outputfilename}.part{conn}"
-                    if path.exists(partfile):
-                        os.remove(file)
-
-        except Exception as ex:
-            print(ex)
-            exit()
+        print(f"{COLOR_VERBOSE}Multiple connection mode!{COLOR_RESET}")
+        download(chunksize)
+    
+    if verbose:
+        print(f"\r{COLOR_VERBOSE}Main thread free!{COLOR_RESET}\n")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(f"{COLOR_ERROR}Cancelled by user!{COLOR_RESET}")
+        stop = True
+        exit()
 
 # TODO: Implement feature to let user provide/download multiple urls
-# TODO: Implement feature to let user stop program in the middle of downloading
-# TODO: Implement mechanism to handle connection error in the middle of downloading
 # TODO: Implement feature to let user choose destination directory for the downloaded file
-# TODO: Implement a thead handler class
