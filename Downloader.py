@@ -9,7 +9,7 @@ import string
 import random
 import threading
 from progress.bar import ChargingBar
-from socket import gaierror
+from socket import gaierror, socket
 from urllib3.exceptions import NewConnectionError, ReadTimeoutError
 import keyboard
 
@@ -42,6 +42,7 @@ if(argv.__getattribute__("verbose")):
 downloadedfile = 0
 bar = ChargingBar("Downloading")
 error_occured = False
+
 
 def fill_url():
     '''Returns url from argv'''
@@ -262,11 +263,14 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
             downloadeddata += content.__len__()
         except requests.exceptions.ConnectionError as nce:
             if nce.__str__().__contains__("Failed to establish a new connection"):
-                print(f"{COLOR_ERROR}Thread {id}: Failed to establish a new connection!{COLOR_RESET}")
+                print(
+                    f"{COLOR_ERROR}Thread {id}: Failed to establish a new connection!{COLOR_RESET}")
             elif nce.__str__().__contains__("Read timed out"):
-                print(f"{COLOR_ERROR}Thread {id}: Connection timed out! Please check your internet connection!{COLOR_RESET}")                
+                print(
+                    f"{COLOR_ERROR}Thread {id}: Connection timed out! Please check your internet connection!{COLOR_RESET}")
             else:
-                print(f"{COLOR_ERROR}Thread {id}: Connection Error... {nce}{COLOR_RESET}")
+                print(
+                    f"{COLOR_ERROR}Thread {id}: Connection Error... {nce}{COLOR_RESET}")
             error_occured = True
             stop = True
             exit()
@@ -282,45 +286,6 @@ def download_multipart(url, startrange, finishrange, id, outputfile):
         report_progress(content.__len__())
         if path.getsize(filename) >= size:
             break
-
-
-def download_singlepart(url, filename):
-    '''Download content from given url and save it to filename'''
-    downloadeddata = 0
-    content_stream = requests.get(url, stream=True, timeout=5)
-    if path.exists(filename):
-        if not input(f"{COLOR_WARNING}File '{filename}' already exists! Do you want to overwrite it?(Y/y): ").lower() in {"yes", "ye", "y"}:
-            print(f"{COLOR_VERBOSE}Ok Bye!{COLOR_RESET}")
-            exit()
-        else:
-            os.remove(filename)
-            print(f"{COLOR_RESET}")
-    
-    partfile = f"{filename}.part"
-    if not path.exists(partfile):
-        with open(partfile, "x"):  # create file if not exists
-            pass
-    else:
-        with open(partfile, "w"):  # delete file content if file already exists
-            pass
-    
-    with open(partfile, "ab") as file:
-        try:
-            for chunk in content_stream.iter_content(1024*500):
-                file.write(chunk)
-                downloadeddata += chunk.__len__()
-                print(
-                    f"\r{COLOR_VERBOSE}Downloaded: {downloadeddata/(1024*1024)} MB      {COLOR_RESET}", end="")
-        except KeyboardInterrupt:
-            print(
-                f"\n{COLOR_ERROR}Download Cancelled! Downloaded {downloadeddata/(1024*1024)} MB{COLOR_RESET}")
-            os.remove(partfile)
-            exit()
-    
-    if path.exists(filename):
-        os.remove(filename)
-    os.rename(partfile, filename)
-    print(f"\n{COLOR_VERBOSE}Download complete!{COLOR_RESET}")
 
 
 def download(chunksize):
@@ -381,19 +346,87 @@ def download(chunksize):
             if verbose:
                 print(f"{COLOR_VERBOSE}Cleaning residual files...{COLOR_RESET}")
             for con in range(connections):
-                    file = f"{outputfilename}.part{con}"
-                    if path.exists(file):
-                        os.remove(file)
-        if not stop:
-            print(f"{COLOR_VERBOSE} Download complete!{COLOR_RESET}")
-        elif error_occured:
-            print(f"{COLOR_ERROR} Download could not be completed!{COLOR_RESET}")
-        else:
-            print(f"{COLOR_ERROR} Download Cancelled!{COLOR_RESET}")
+                file = f"{outputfilename}.part{con}"
+                if path.exists(file):
+                    os.remove(file)
 
     except Exception as ex:
         print(ex)
         exit()
+
+
+def download_singlepart(url, filename):
+    '''Download content from given url and save it to filename'''
+    downloadeddata = 0
+    global filelength
+    global bar
+    global stop
+    global error_occured
+    content_stream = requests.get(url, stream=True, timeout=5)
+    if path.exists(filename):
+        if not input(f"{COLOR_WARNING}File '{filename}' already exists! Do you want to overwrite it?(Y/y): ").lower() in {"yes", "ye", "y"}:
+            print(f"{COLOR_VERBOSE}Ok Bye!{COLOR_RESET}")
+            exit()
+        else:
+            os.remove(filename)
+            print(f"{COLOR_RESET}")
+
+    partfile = f"{filename}.part"
+    if not path.exists(partfile):
+        with open(partfile, "x"):  # create file if not exists
+            pass
+    else:
+        with open(partfile, "w"):  # delete file content if file already exists
+            pass
+    if filelength:
+        bar = ChargingBar("Downloading ", max=filelength)
+
+    try:
+        with open(partfile, "wb") as file:
+            for chunk in content_stream.iter_content(1024*500):
+                file.write(chunk)
+                downloadeddata += chunk.__len__()
+                if not filelength:
+                    print(
+                        f"\r{COLOR_VERBOSE}Downloaded: {downloadeddata/(1024*1024)} MB      {COLOR_RESET}", end="")
+                else:
+                    if downloadeddata <= filelength:
+                        report_progress(chunk.__len__())
+                    else:
+                        bar.finish()
+                        break
+
+    except KeyboardInterrupt:
+        print(
+            f"\n{COLOR_ERROR}Download Cancelled! Downloaded {downloadeddata/(1024*1024)} MB{COLOR_RESET}")
+        os.remove(partfile)
+        exit()
+    except requests.exceptions.ConnectionError as nce:
+        if nce.__str__().__contains__("Failed to establish a new connection"):
+            print(
+                f"\n{COLOR_ERROR} Failed to establish a new connection!{COLOR_RESET}")
+        elif nce.__str__().__contains__("Read timed out"):
+            print(
+                f"\n{COLOR_ERROR}Connection timed out! Please check your internet connection!{COLOR_RESET}")
+        else:
+            print(
+                f"\n{COLOR_ERROR}Connection Error... {nce}{COLOR_RESET}")
+        error_occured = True
+        stop = True
+    if not stop:
+        try:
+            if path.exists(filename):
+                os.remove(filename)
+            os.rename(partfile, filename)
+        except PermissionError:
+            with open(filename, "wb") as finalfile:
+                with open(partfile, "rb") as file:
+                    for line in file.readlines():
+                        finalfile.write(line)
+            os.remove(partfile)
+    else:
+        if path.exists(partfile):
+            os.remove(partfile)
 
 
 def main():
@@ -444,7 +477,13 @@ def main():
     else:
         print(f"{COLOR_VERBOSE}Multiple connection mode!{COLOR_RESET}")
         download(chunksize)
-    
+    if not stop:
+        print(f"{COLOR_VERBOSE} Download complete!{COLOR_RESET}")
+    elif error_occured:
+        print(f"{COLOR_ERROR} Download could not be completed!{COLOR_RESET}")
+    else:
+        print(f"{COLOR_ERROR} Download Cancelled!{COLOR_RESET}")
+
     if verbose:
         print(f"\r{COLOR_VERBOSE}Main thread free!{COLOR_RESET}\n")
 
