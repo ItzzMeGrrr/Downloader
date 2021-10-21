@@ -1,18 +1,17 @@
-import os
-import sys
-import requests
-import argparse
-import os.path as path
-from colorama import Fore
-import urllib
-import string
-import random
-import threading
-from progress.bar import ChargingBar
-from socket import gaierror, socket
-from urllib3.exceptions import NewConnectionError, ReadTimeoutError
-import keyboard
-
+try:
+    import os
+    import requests
+    import argparse
+    import os.path as path
+    from colorama import Fore
+    import urllib
+    import string
+    import random
+    import threading
+    from progress.bar import ChargingBar
+except ModuleNotFoundError as mnf:
+    print(f"{mnf.msg}\nPlease run 'pip install -r requirements.txt' to install required modules")
+    exit()
 
 COLOR_WARNING = f"{Fore.YELLOW}[WARNING]"
 COLOR_RESET = f"{Fore.RESET}"
