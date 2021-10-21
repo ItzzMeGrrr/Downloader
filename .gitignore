@@ -1,2 +1,5 @@
 .vscode/
 .vscode/launch.json
+*.zip
+*.exe
+*.part*
