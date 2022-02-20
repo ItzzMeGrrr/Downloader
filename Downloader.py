@@ -25,7 +25,7 @@ parser.add_argument('url', metavar='url', type=str,
 parser.add_argument('-c', '--connections', metavar='N', type=int,
                     nargs=1, help='No. of connections to use')
 parser.add_argument('-f', '--file', metavar='<filename>',
-                    type=str, nargs=1, help="Save downloaded file as <filename>")
+                    type=str, nargs=1, help="Save downloaded file as ")
 parser.add_argument('-v', '--verbose', action="store_true",
                     help="Get verbose output")
 argv = parser.parse_args()
@@ -36,6 +36,7 @@ url = ""
 response = ""
 filelength = 0
 verbose = False
+fetch = True
 if(argv.__getattribute__("verbose")):
     verbose = True
 downloadedfile = 0
@@ -86,41 +87,25 @@ def fill_connections():
 
 def fill_file():
     '''Returns filename from argv'''
+    global response
+    global url
+    global fetch
     try:
         if argv.__getattribute__("file"):
             file = path.abspath(argv.__getattribute__("file")[0])
             if not path.exists(path.dirname(file)):
                 raise FileNotFoundError()
+            elif not path.basename(file):
+                file = get_filename_dynamically()
+            else:
+                if fetch:
+                    file = get_filename_dynamically()
         else:
             if verbose:
                 print(
                     f"\r{COLOR_WARNING}File name not provided, so going with filename from url if possible.{COLOR_RESET}")
 
-            ret = retrieve_filename(response, url)
-            if type(ret) == str:  # try to determine the file extention
-                file = ret
-                if path.splitext(file)[1]:
-                    pass
-                else:
-                    contenttype = response.headers.get("Content-type")
-                    if contenttype.__contains__("javascript"):
-                        file = file + ".js"
-                    elif contenttype.__contains__("css"):
-                        file = file + ".css"
-                    elif contenttype.__contains__("html"):
-                        file = file + ".html"
-                    elif contenttype.__contains__("zip"):
-                        file = file + ".zip"
-                if verbose:
-                    print(
-                        f"\r{COLOR_VERBOSE}File name found: {file}{COLOR_RESET}\n")
-            else:  # Could not retrieve file name from anywhere
-                randomname = ''.join(random.choices(
-                    string.ascii_letters + string.digits, k=8))
-                file = randomname
-                if verbose:
-                    print(
-                        f"\r{COLOR_WARNING}Could not determine filename so going random.{COLOR_RESET}\n")
+            file = get_filename_dynamically()
 
     except FileNotFoundError as fnf:
         print(
@@ -129,12 +114,36 @@ def fill_file():
     return file
 
 
+def get_filename_dynamically():
+    global response
+    global url
+    file = retrieve_filename(response, url)    
+    if type(file) == str:  # try to determine the file extention
+        if path.splitext(file)[1]:
+            pass
+        else:
+            contenttype = response.headers.get("Content-type")
+            if contenttype.__contains__("javascript"):
+                file = file + ".js"
+            elif contenttype.__contains__("css"):
+                file = file + ".css"
+            elif contenttype.__contains__("html"):
+                file = file + ".html"
+            elif contenttype.__contains__("zip"):
+                file = file + ".zip"
+                
+        if verbose:
+            print(
+                f"\r{COLOR_VERBOSE}File name found: {file}{COLOR_RESET}\n")
+    return file
+
+
 def retrieve_filename(response, url):
-    '''Tries retrieve filename from url or Content-Disposition header othrewise generates random filename'''
+    '''Tries to retrieve filename from url or Content-Disposition header'''
     tempurl = urllib.parse.urlparse(url)
     tempfilename = path.basename(tempurl.path)
     if tempfilename:
-        return tempfilename
+        return str(tempfilename)
     else:
         try:
             contentdispos = str(response.headers.get("Content-Disposition"))
@@ -157,16 +166,22 @@ def retrieve_filename(response, url):
                             print(
                                 f"\r{COLOR_WARNING}Filename not found in Content-Disposition header.{COLOR_RESET}\n")
 
-                return False
+                return generate_random_name()
             else:
                 if verbose:
                     print(
                         f"\r{COLOR_WARNING}Filename not found in Content-Disposition header.{COLOR_RESET}\n")
-                return False
+                return generate_random_name()
         except IndexError as ie:
             print(
                 f"{COLOR_WARNING}Filename not found in Content-Disposition header.{COLOR_RESET}")
-            return False
+            return generate_random_name()
+
+
+def generate_random_name():
+    randomname = ''.join(random.choices(
+        string.ascii_letters + string.digits, k=8))
+    return randomname
 
 
 def fill_response(url):
@@ -437,6 +452,7 @@ def main():
     global response
     global outputfilename
     global connections
+    global fetch
 
     url = fill_url()
     response = fill_response(url)
