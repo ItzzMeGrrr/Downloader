@@ -36,7 +36,11 @@ url = ""
 response = ""
 filelength = 0
 verbose = False
-fetch = True
+
+if(argv.__getattribute__("file")):
+    fetch = False
+else:
+    fetch = True
 if(argv.__getattribute__("verbose")):
     verbose = True
 downloadedfile = 0
@@ -45,7 +49,7 @@ error_occured = False
 
 
 def fill_url():
-    '''Returns url from argv'''
+    '''Returns `url` from argv'''
     if argv.__getattribute__("url"):
         url = str(argv.__getattribute__("url")[0])
         url = urllib.parse.unquote(url)
@@ -77,7 +81,7 @@ def fill_url():
 
 
 def fill_connections():
-    '''Returns connections from argv'''
+    '''Returns `connections` from argv'''
     if argv.__getattribute__("connections"):
         connections = int(argv.__getattribute__("connections")[0])
         return connections
@@ -86,20 +90,22 @@ def fill_connections():
 
 
 def fill_file():
-    '''Returns filename from argv'''
+    '''Returns `filename` from argv'''
     global response
     global url
     global fetch
     try:
         if argv.__getattribute__("file"):
             file = path.abspath(argv.__getattribute__("file")[0])
+            # if the directory does not exist, create it
             if not path.exists(path.dirname(file)):
                 raise FileNotFoundError()
-            elif not path.basename(file):
+            elif not path.basename(file):  # if filename is not valid
                 file = get_filename_dynamically()
             else:
-                if fetch:
+                if fetch:  # if filename not provided, try to get the name from url or something
                     file = get_filename_dynamically()
+
         else:
             if verbose:
                 print(
@@ -115,9 +121,10 @@ def fill_file():
 
 
 def get_filename_dynamically():
+    '''Returns filename from url'''
     global response
     global url
-    file = retrieve_filename(response, url)    
+    file = retrieve_filename(response, url)
     if type(file) == str:  # try to determine the file extention
         if path.splitext(file)[1]:
             pass
@@ -131,7 +138,7 @@ def get_filename_dynamically():
                 file = file + ".html"
             elif contenttype.__contains__("zip"):
                 file = file + ".zip"
-                
+
         if verbose:
             print(
                 f"\r{COLOR_VERBOSE}File name found: {file}{COLOR_RESET}\n")
@@ -139,7 +146,7 @@ def get_filename_dynamically():
 
 
 def retrieve_filename(response, url):
-    '''Tries to retrieve filename from url or Content-Disposition header'''
+    '''Tries to retrieve `filename` from `url` or Content-Disposition header otherwise generates a random name'''
     tempurl = urllib.parse.urlparse(url)
     tempfilename = path.basename(tempurl.path)
     if tempfilename:
@@ -179,13 +186,14 @@ def retrieve_filename(response, url):
 
 
 def generate_random_name():
+    '''Returns a random name of length 10'''
     randomname = ''.join(random.choices(
-        string.ascii_letters + string.digits, k=8))
+        string.ascii_letters + string.digits, k=10))
     return randomname
 
 
 def fill_response(url):
-    '''Returns head response for the given url'''
+    '''Returns head response for the given `url`'''
     resp = requests.head(url, allow_redirects=True)
     contenttype = resp.headers.get("Content-type")
 
@@ -214,7 +222,7 @@ def still_download(filetype):
 
 
 def calculate_chunk_sizes(connections, filelength):
-    '''Returns chunksize for given connections and filelength'''
+    '''Returns `chunksize` for given connections and `filelength`'''
     remainder = filelength % connections
     filelength -= remainder
     chunksize = int(filelength / connections)
@@ -222,7 +230,7 @@ def calculate_chunk_sizes(connections, filelength):
 
 
 def server_supports_range(response):
-    '''Returns True if server accepts range requests'''
+    '''Returns True if server supports range'''
     if not response.headers.get("Accept-Ranges"):
         return False
     else:
@@ -230,7 +238,7 @@ def server_supports_range(response):
 
 
 def write_to_file(filename, data):
-    '''Writes binary given data to given filename'''
+    '''Writes given binary `data` to given `filename`'''
     with open(filename, 'ab') as f:
         f.write(data)
 
@@ -247,7 +255,9 @@ def report_progress(downloadedsize):
 
 
 def download_multipart(url, startrange, finishrange, id, outputfile):
-    '''Download file in the given startrange and finishrange from url and write it to outputfile'''
+    '''Download file in the given `startrange` and `finishrange` from `url` and write it to `outputfile`'''
+    if(argv.__getattribute__("file")):
+        filename = argv.__getattribute__("file")
     filename = f"{outputfile}.part{id}"
     chunksizetemp = 1024 * 500
     size = finishrange - startrange
@@ -370,7 +380,7 @@ def download(chunksize):
 
 
 def download_singlepart(url, filename):
-    '''Download content from given url and save it to filename'''
+    '''Download content from given `url` and save it to `filename`'''
     downloadeddata = 0
     global filelength
     global bar
